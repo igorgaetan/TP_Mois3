@@ -1,0 +1,47 @@
+# =========================
+# Terraform
+# =========================
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan
+.terraformrc
+terraform.rc
+
+# =========================
+# Ansible
+# =========================
+# On ignore l'environnement virtuel local
+ansible/.venv/
+
+# On ignore les fichiers temporaires créés par Ansible ou les secrets potentiels
+ansible/*.retry
+ansible/group_vars/*/*.vault
+ansible/host_vars/*/*.vault
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+
+# =========================
+# Secrets & Env
+# =========================
+.env
+.env.*
+*.pem
+*.key
+
+# =========================
+# Logs
+# =========================
+*.log

@@ -1,0 +1,31 @@
+- name: Installer k3s
+  ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
+  args:
+    creates: /usr/local/bin/k3s
+
+- name: Attendre que k3s soit prêt
+  ansible.builtin.wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    state: present
+    timeout: 60
+
+- name: Récupérer le kubeconfig
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: ./kubeconfig-k3s.yaml
+    flat: true
+
+- name: Remplacer 127.0.0.1 par l'IP publique dans le kubeconfig local
+  delegate_to: localhost
+  ansible.builtin.replace:
+    path: ./kubeconfig-k3s.yaml
+    regexp: '127\.0\.0\.1'
+    replace: "{{ ansible_host }}"
+
+- name: Installer nginx-ingress via Helm
+  kubernetes.core.helm:
+    name: ingress-nginx
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: ingress-nginx
+    create_namespace: true
+    kubeconfig: ./kubeconfig-k3s.yaml

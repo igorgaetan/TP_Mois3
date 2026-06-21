@@ -1,3 +1,0 @@
-region = "eu-west-1"
-name   = "capstone-staging"
-azs    = ["eu-west-1a", "eu-west-1b"]

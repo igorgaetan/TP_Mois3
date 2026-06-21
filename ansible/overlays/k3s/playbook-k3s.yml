@@ -1,0 +1,5 @@
+- name: Configurer le serveur k3s
+  hosts: tag_k3s
+  become: true
+  roles:
+    - k3s-install

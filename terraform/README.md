@@ -1,6 +1,6 @@
 # Terraform — Infrastructure AWS
 
-## 1. Prérequis : créer un compte / utilisateur AWS avec accès programmatique
+## 1. Prérequis : créer un compte / utilisateur AWS
 
 Si ce n'est pas déjà fait :
 
@@ -97,7 +97,7 @@ sans dupliquer le code.
 
 cd terraform/bootstrap
 terraform init
-terraform apply -var="bucket_name=capstone-tfstate-TONNOM"
+terraform apply -var="bucket_name=capstone-tfstate-igor-2026-06-21"
 
 Remplace `TONNOM` par quelque chose d'unique à toi (les noms de bucket S3
 sont uniques sur toute la planète AWS, pas juste ton compte — ex:
@@ -108,6 +108,10 @@ Terraform va te demander confirmation, tape `yes`.
 Note bien les deux valeurs affichées à la fin :
 - `bucket_name` → tu en as besoin à l'étape suivante
 - `dynamodb_table` → idem
+
+/* Output */
+bucket_name = "capstone-tfstate-igor-2026-06-21"
+dynamodb_table = "capstone-tfstate-igor-2026-06-21-locks"
 
 ## 7. Étape B — Déployer le VPC
 
@@ -158,13 +162,29 @@ terraform destroy -var="bucket_name=capstone-tfstate-TONNOM"
 
 ## 10. Avancement du projet
 
-| Brique          | Statut     | Dossier              |
-|------------------|------------|------------------------|
-| Réseau (VPC)   | ✅ Fait    | modules/vpc/         |
-| EKS                | À venir   | modules/eks/         |
-| RDS                | À venir   | modules/rds/         |
-| EC2 + k3s       | À venir   | modules/ec2-k3s/   |
+| Brique          | Statut  | Dossier              |
+|------------------|---------|------------------------|
+| Réseau (VPC)   | ✅ Fait | modules/vpc/         |
+| EKS                | ✅ Fait | modules/eks/         |
+| RDS                | ✅ Fait | modules/rds/         |
+| EC2 + k3s       | ✅ Fait | modules/ec2-k3s/   |
 
-Chaque nouveau module sera ajouté dans `environments/staging/main.tf`,
-en réutilisant les outputs du VPC (`private_compute_subnet_id`,
-`private_data_subnet_ids`, `public_subnet_id`).
+## 11. Note sur le découpage réseau final
+
+EKS exige des subnets dans au moins 2 AZ pour son control plane — le VPC
+a donc 5 subnets (1 public, 2 privé-compute, 2 privé-data) et non 4 comme
+initialement prévu.
+
+## 12. Avant de relancer terraform apply
+
+Le module RDS a besoin du SG des nœuds EKS, qui n'existe qu'une fois EKS
+créé. Comme tout est dans le même `main.tf`, `terraform apply` gère l'ordre
+de création automatiquement (Terraform calcule le graphe de dépendances
+depuis les références entre modules — pas besoin de le faire en plusieurs
+fois).
+
+⚠️ Le module EKS prend 10-15 minutes à créer (le control plane AWS est lent
+à provisionner). C'est normal, ne tue pas la commande.
+
+terraform plan    # vérifie ce qui va être créé
+terraform apply   # tape "yes"

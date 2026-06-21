@@ -1,0 +1,11 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - eu-west-1
+filters:
+  tag:Role: k3s
+  instance-state-name: running
+keyed_groups:
+  - key: tags.Role
+    prefix: tag
+hostnames:
+  - public-ip-address

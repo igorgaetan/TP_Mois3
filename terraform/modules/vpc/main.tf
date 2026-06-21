@@ -29,14 +29,15 @@ resource "aws_subnet" "public" {
   }
 }
 
-# --- Subnet privé compute (nœuds EKS / EC2 k3s) ---
+# --- Subnets privés compute (nœuds EKS, 2 AZ requis par EKS) ---
 resource "aws_subnet" "private_compute" {
+  count             = 2
   vpc_id            = aws_vpc.this.id
-  cidr_block        = var.private_compute_subnet_cidr
-  availability_zone = var.azs[0]
+  cidr_block        = var.private_compute_subnet_cidrs[count.index]
+  availability_zone = var.azs[count.index]
 
   tags = {
-    Name = "${var.name}-private-compute"
+    Name = "${var.name}-private-compute-${count.index}"
     Tier = "private-compute"
   }
 }
@@ -54,7 +55,7 @@ resource "aws_subnet" "private_data" {
   }
 }
 
-# --- NAT Gateway (doit être dans le subnet PUBLIC) ---
+# --- NAT Gateway (dans le subnet PUBLIC) ---
 resource "aws_eip" "nat" {
   domain = "vpc"
 
@@ -93,7 +94,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# --- Routing privé compute (sort via NAT) ---
+# --- Routing privé compute (sort via NAT, une seule table partagée par les 2 AZ) ---
 resource "aws_route_table" "private_compute" {
   vpc_id = aws_vpc.this.id
 
@@ -108,7 +109,8 @@ resource "aws_route_table" "private_compute" {
 }
 
 resource "aws_route_table_association" "private_compute" {
-  subnet_id      = aws_subnet.private_compute.id
+  count          = 2
+  subnet_id      = aws_subnet.private_compute[count.index].id
   route_table_id = aws_route_table.private_compute.id
 }
 

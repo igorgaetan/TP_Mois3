@@ -1,0 +1,9 @@
+region = "eu-west-1"
+name   = "capstone-staging"
+azs    = ["eu-west-1a", "eu-west-1b"]
+
+# Génère une paire si tu n'en as pas : ssh-keygen -t ed25519 -f ~/.ssh/capstone_k3s puis cat ~/.ssh/capstone_k3s.pub
+ssh_public_key = "ssh-ed25519 AAAA... ton-email@exemple.com"
+
+# Trouve ta propre IP : curl ifconfig.me
+allowed_ssh_cidr = "TON_IP/32"
