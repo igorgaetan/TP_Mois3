@@ -33,3 +33,11 @@ output "rds_secret_arn" {
 output "k3s_public_ip" {
   value = module.ec2_k3s.public_ip
 }
+
+output "ecr_registry_url" {
+  value = module.ecr.registry_url
+}
+
+output "ecr_repository_urls" {
+  value = module.ecr.repository_urls
+}

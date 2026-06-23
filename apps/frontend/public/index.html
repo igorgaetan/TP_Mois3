@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Capstone App</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 40px auto; }
+    section { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+    h2 { margin-top: 0; }
+    pre { background: #f4f4f4; padding: 10px; overflow-x: auto; }
+    input, button { padding: 6px; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <h1>Capstone Multi-tier App</h1>
+
+  <section>
+    <h2>Users</h2>
+    <input id="u-name" placeholder="nom" />
+    <input id="u-email" placeholder="email" />
+    <button onclick="createUser()">Créer</button>
+    <button onclick="loadUsers()">Rafraîchir</button>
+    <pre id="users-out"></pre>
+  </section>
+
+  <section>
+    <h2>Products</h2>
+    <input id="p-name" placeholder="nom" />
+    <input id="p-price" placeholder="prix" />
+    <button onclick="createProduct()">Créer</button>
+    <button onclick="loadProducts()">Rafraîchir</button>
+    <pre id="products-out"></pre>
+  </section>
+
+  <section>
+    <h2>Orders</h2>
+    <input id="o-user" placeholder="user_id" />
+    <input id="o-product" placeholder="product_id" />
+    <button onclick="createOrder()">Créer</button>
+    <button onclick="loadOrders()">Rafraîchir</button>
+    <pre id="orders-out"></pre>
+  </section>
+
+  <script>
+    // Les chemins sont routés par l'Ingress: /api/users, /api/products, /api/orders
+    async function loadUsers() {
+      const r = await fetch('/api/users');
+      document.getElementById('users-out').textContent = JSON.stringify(await r.json(), null, 2);
+    }
+    async function createUser() {
+      const name = document.getElementById('u-name').value;
+      const email = document.getElementById('u-email').value;
+      await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email }) });
+      loadUsers();
+    }
+    async function loadProducts() {
+      const r = await fetch('/api/products');
+      document.getElementById('products-out').textContent = JSON.stringify(await r.json(), null, 2);
+    }
+    async function createProduct() {
+      const name = document.getElementById('p-name').value;
+      const price = parseFloat(document.getElementById('p-price').value);
+      await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, price }) });
+      loadProducts();
+    }
+    async function loadOrders() {
+      const r = await fetch('/api/orders');
+      document.getElementById('orders-out').textContent = JSON.stringify(await r.json(), null, 2);
+    }
+    async function createOrder() {
+      const user_id = parseInt(document.getElementById('o-user').value);
+      const product_id = parseInt(document.getElementById('o-product').value);
+      await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id, product_id }) });
+      loadOrders();
+    }
+  </script>
+</body>
+</html>

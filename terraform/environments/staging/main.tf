@@ -11,6 +11,7 @@ module "eks" {
   name                        = var.name
   vpc_id                      = module.vpc.vpc_id
   private_compute_subnet_ids = module.vpc.private_compute_subnet_ids
+  node_instance_types        = ["m7i-flex.large"]
 }
 
 module "rds" {
@@ -30,4 +31,10 @@ module "ec2_k3s" {
   public_subnet_id = module.vpc.public_subnet_id
   ssh_public_key    = var.ssh_public_key
   allowed_ssh_cidr  = var.allowed_ssh_cidr
+  instance_type    = "m7i-flex.large" 
+}
+
+module "ecr" {
+  source = "../../modules/ecr"
+  name   = var.name
 }

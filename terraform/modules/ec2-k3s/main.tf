@@ -42,6 +42,14 @@ resource "aws_security_group" "k3s" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "kubectl API server"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]   # ton IP uniquement, pas 0.0.0.0/0
+    }
+
   egress {
     from_port   = 0
     to_port     = 0

@@ -5,7 +5,7 @@ filters:
   tag:Role: k3s
   instance-state-name: running
 keyed_groups:
-  - key: tags.Role
+  - key: ec2_tags.Role
     prefix: tag
-hostnames:
-  - public-ip-address
+compose:
+  ansible_host: public_ip_address

@@ -1,0 +1,99 @@
+# ElastAlert2 - alertes opérationnelles basées sur les logs indexés dans Elasticsearch.
+# Les règles sont montées via ConfigMap. La sortie est un webhook (ex: Slack) configuré
+# via le secret 'alert-webhook' (URL Slack/Teams, jamais en clair dans le repo).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elastalert-config
+  namespace: capstone
+data:
+  config.yaml: |
+    rules_folder: /opt/elastalert/rules
+    run_every:
+      minutes: 1
+    buffer_time:
+      minutes: 5
+    es_host: elasticsearch
+    es_port: 9200
+    es_username: elastic
+    use_ssl: false
+    writeback_index: elastalert_status
+    alert_time_limit:
+      days: 2
+
+  rule_error_rate.yaml: |
+    name: Taux d'erreurs applicatives élevé
+    type: frequency
+    index: capstone-logs-*
+    num_events: 10
+    timeframe:
+      minutes: 5
+    filter:
+      - term:
+          level: "error"
+    alert:
+      - "post"
+    http_post_url:
+      - "__SLACK_OR_TEAMS_WEBHOOK_URL__"
+    http_post_static_payload:
+      text: "ALERTE: plus de 10 erreurs applicatives en 5 minutes sur capstone"
+
+  rule_service_down.yaml: |
+    name: Aucun log reçu d'un service (probable panne)
+    type: flatline
+    index: capstone-logs-*
+    threshold: 1
+    timeframe:
+      minutes: 5
+    alert:
+      - "post"
+    http_post_url:
+      - "__SLACK_OR_TEAMS_WEBHOOK_URL__"
+    http_post_static_payload:
+      text: "ALERTE: aucun log reçu depuis 5 minutes - service potentiellement down"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elastalert
+  namespace: capstone
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elastalert
+  template:
+    metadata:
+      labels:
+        app: elastalert
+    spec:
+      containers:
+        - name: elastalert
+          image: jertel/elastalert2:2.18.0
+          env:
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elk-credentials
+                  key: ELASTIC_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: config
+              mountPath: /opt/elastalert/config.yaml
+              subPath: config.yaml
+            - name: config
+              mountPath: /opt/elastalert/rules/rule_error_rate.yaml
+              subPath: rule_error_rate.yaml
+            - name: config
+              mountPath: /opt/elastalert/rules/rule_service_down.yaml
+              subPath: rule_service_down.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: elastalert-config

@@ -55,7 +55,7 @@ source .venv/bin/activate
 Tu dois voir `(.venv)` apparaître au début de ton invite de commande.
 
 ⚠️ À chaque fois que tu ouvres un nouveau terminal pour travailler sur Ansible,
-relance `source .venv/bin/activate` pour réactiver l'environnement.
+relance `source .venv/bin/activate` pour réactiver l'environnement. `deactivate`
 
 ## 4. Installer Ansible
 

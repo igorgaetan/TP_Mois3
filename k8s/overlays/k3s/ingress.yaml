@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: capstone-ingress
+  namespace: capstone
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 8080
+          - path: /api/users
+            pathType: Prefix
+            backend:
+              service:
+                name: api-users
+                port:
+                  number: 3001
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: api-orders
+                port:
+                  number: 3002
+          - path: /api/products
+            pathType: Prefix
+            backend:
+              service:
+                name: api-products
+                port:
+                  number: 3003

@@ -67,8 +67,8 @@ resource "aws_db_instance" "this" {
   password               = random_password.db.result
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  multi_az                = var.multi_az
   storage_encrypted       = true
   skip_final_snapshot     = true   # à passer à false en prod réelle
-  backup_retention_period = 7
+  multi_az                = false   # ← Free Tier n'autorise pas Multi-AZ non plus
+  backup_retention_period = 0       # ← était 7, interdit en Free Tier
 }
