@@ -256,6 +256,8 @@ terraform output
 
 ---
 
+
+
 ## 9. Note Free Tier
 
 Les instances sont en `t3.micro` pour rester dans le Free Tier AWS.
