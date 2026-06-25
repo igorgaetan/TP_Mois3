@@ -13,9 +13,11 @@ variable "azs" {
   description = "2 AZ à utiliser, ex: [\"eu-west-1a\", \"eu-west-1b\"]"
 }
 
-variable "public_subnet_cidr" {
-  type    = string
-  default = "10.0.0.0/24"
+# Changement ici : Passage en LIST de chaînes au pluriel pour coller au count = 2
+variable "public_subnet_cidrs" {
+  type        = list(string)
+  description = "2 CIDR pour les subnets publics (1 par AZ, requis pour l'ALB)"
+  default     = ["10.0.10.0/24", "10.0.11.0/24"] # CIDRs décalés pour éviter les conflits avec le compute (1.0/24)
 }
 
 variable "private_compute_subnet_cidrs" {

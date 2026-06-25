@@ -4,36 +4,45 @@ metadata:
   name: capstone-ingress
   namespace: capstone
   annotations:
-    kubernetes.io/ingress.class: nginx
+    kubernetes.io/ingress.class: "nginx"
+    # PLUS DE REWRITE TARGET ICI ! On veut que /api/users reste /api/users
 spec:
+  ingressClassName: nginx # Ou "traefik" selon ce que tu as configuré sur ton K3s
   rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 8080
-          - path: /api/users
-            pathType: Prefix
-            backend:
-              service:
-                name: api-users
-                port:
-                  number: 3001
-          - path: /api/orders
-            pathType: Prefix
-            backend:
-              service:
-                name: api-orders
-                port:
-                  number: 3002
-          - path: /api/products
-            pathType: Prefix
-            backend:
-              service:
-                name: api-products
-                port:
-                  number: 3003
+  - http:
+      paths:
+        # 1. API Users -> Envoie /api/users/... vers le pod
+        - path: /api/users
+          pathType: Prefix
+          backend:
+            service:
+              name: api-users
+              port:
+                number: 3001
+
+        # 2. API Orders -> Envoie /api/orders/... vers le pod
+        - path: /api/orders
+          pathType: Prefix
+          backend:
+            service:
+              name: api-orders
+              port:
+                number: 3002
+
+        # 3. API Products -> Envoie /api/products/... vers le pod
+        - path: /api/products
+          pathType: Prefix
+          backend:
+            service:
+              name: api-products
+              port:
+                number: 3003
+
+        # 4. Le Frontend -> Intercepte tout le reste à la racine (/)
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: frontend
+              port:
+                number: 8080

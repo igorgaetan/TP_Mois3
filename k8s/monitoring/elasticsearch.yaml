@@ -19,7 +19,7 @@ spec:
           image: busybox:1.36
           command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
           volumeMounts:
-            - name: es-data
+            - name: es-data-1
               mountPath: /usr/share/elasticsearch/data
         - name: increase-vm-max-map
           image: busybox:1.36
@@ -54,18 +54,25 @@ spec:
               cpu: "1000m"
               memory: "1Gi"
           volumeMounts:
-            - name: es-data
+            - name: es-data-1
               mountPath: /usr/share/elasticsearch/data
           readinessProbe:
-            httpGet:
-              path: /_cluster/health?local=true
-              port: 9200
-            initialDelaySeconds: 30
-            periodSeconds: 15
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  curl -s -u elastic:${ELASTIC_PASSWORD} \
+                    http://localhost:9200/_cluster/health?local=true \
+                    | grep -q '"status"'
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 20
   volumeClaimTemplates:
     - metadata:
-        name: es-data
+        name: es-data-1
       spec:
+        storageClassName: gp3
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
@@ -87,3 +94,5 @@ spec:
       targetPort: 9300
       name: transport
   clusterIP: None
+  publishNotReadyAddresses: true
+  

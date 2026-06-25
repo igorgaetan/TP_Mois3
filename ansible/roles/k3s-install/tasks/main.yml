@@ -1,7 +1,7 @@
-- name: Installer k3s avec TLS SAN pour l'IP publique
+- name: Installer k3s sans Traefik ni ServiceLB avec TLS SAN pour l'IP publique
   ansible.builtin.shell: |
     curl -sfL https://get.k3s.io | \
-    INSTALL_K3S_EXEC="--tls-san {{ ansible_host }}" sh -
+    INSTALL_K3S_EXEC="--tls-san {{ ansible_host }} --disable traefik --disable servicelb" sh -
   args:
     creates: /usr/local/bin/k3s
 
@@ -38,10 +38,21 @@
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
-- name: Installer nginx-ingress via Helm
+- name: Installer nginx-ingress via Helm en HostNetwork
   kubernetes.core.helm:
     name: ingress-nginx
     chart_ref: ingress-nginx/ingress-nginx
     release_namespace: ingress-nginx
     create_namespace: true
     kubeconfig: /etc/rancher/k3s/k3s.yaml
+    force: true
+    values:
+      controller:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        service:
+          type: ClusterIP
+        # On force le webhook d'admission à utiliser un port dynamique interne plutôt qu'un HostPort fixe
+        admissionWebhooks:
+          port: 8443
+          runtimeClassName: ""

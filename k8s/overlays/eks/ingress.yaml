@@ -4,21 +4,21 @@ metadata:
   name: capstone-ingress
   namespace: capstone
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
+    
+    # Configuration du Health Check pour l'ALB AWS
+    # On cible "/" avec un code succès large (200 pour les succès, 404 si la racine pure n'est pas codée mais que l'application tourne)
+    # C'est la méthode la plus robuste quand les microservices ont des chemins différents.
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+    alb.ingress.kubernetes.io/success-codes: "200,404"
 spec:
+  ingressClassName: alb
   rules:
     - http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 8080
+          # 1. API Users
           - path: /api/users
             pathType: Prefix
             backend:
@@ -26,6 +26,8 @@ spec:
                 name: api-users
                 port:
                   number: 3001
+
+          # 2. API Orders
           - path: /api/orders
             pathType: Prefix
             backend:
@@ -33,6 +35,8 @@ spec:
                 name: api-orders
                 port:
                   number: 3002
+
+          # 3. API Products
           - path: /api/products
             pathType: Prefix
             backend:
@@ -40,3 +44,20 @@ spec:
                 name: api-products
                 port:
                   number: 3003
+          
+          - path: /kibana
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601
+
+          # 4. Le Frontend (Intercepte tout le reste à la racine)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 8080

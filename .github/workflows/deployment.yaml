@@ -1,0 +1,506 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action manuelle"
+        required: true
+        type: choice
+        options:
+          - deploy-k3s
+          - deploy-eks
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+# ─────────────────────────────────────────────────────────────────
+# JOB 1 — Build & Push (déclenché si une app a changé)
+# ─────────────────────────────────────────────────────────────────
+jobs:
+  build-and-push:
+    name: Build & Push images vers ECR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # nécessaire pour git diff
+
+      - name: Détecter les apps modifiées
+        id: changes
+        run: |
+          # Compare le commit courant avec le précédent
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Fichiers modifiés :"
+          echo "$CHANGED"
+
+          # Un flag par app
+          echo "api_users=$(echo "$CHANGED"   | grep -q '^apps/api-users/'   && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "api_orders=$(echo "$CHANGED"  | grep -q '^apps/api-orders/'  && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "api_products=$(echo "$CHANGED"| grep -q '^apps/api-products/'&& echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "frontend=$(echo "$CHANGED"    | grep -q '^apps/frontend/'    && echo true || echo false)" >> $GITHUB_OUTPUT
+
+          # Flag global — ce job ne fait rien si aucune app n'a changé
+          if echo "$CHANGED" | grep -qE '^apps/(api-users|api-orders|api-products|frontend)/'; then
+            echo "any_app=true" >> $GITHUB_OUTPUT
+          else
+            echo "any_app=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Générer le tag d'image
+        id: meta
+        if: steps.changes.outputs.any_app == 'true'
+        run: echo "tag=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Configurer les credentials AWS
+        if: steps.changes.outputs.any_app == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login au registry ECR
+        id: login-ecr
+        if: steps.changes.outputs.any_app == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Builds séquentiels (conditionnels par app) ────────────
+
+      - name: Build & Push api-users
+        if: steps.changes.outputs.api_users == 'true'
+        run: |
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-users:${{ steps.meta.outputs.tag }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-users:latest \
+            apps/api-users/
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-users:${{ steps.meta.outputs.tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-users:latest
+
+      - name: Build & Push api-orders
+        if: steps.changes.outputs.api_orders == 'true'
+        run: |
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-orders:${{ steps.meta.outputs.tag }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-orders:latest \
+            apps/api-orders/
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-orders:${{ steps.meta.outputs.tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-orders:latest
+
+      - name: Build & Push api-products
+        if: steps.changes.outputs.api_products == 'true'
+        run: |
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-products:${{ steps.meta.outputs.tag }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-products:latest \
+            apps/api-products/
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-products:${{ steps.meta.outputs.tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/api-products:latest
+
+      - name: Build & Push frontend
+        if: steps.changes.outputs.frontend == 'true'
+        run: |
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/frontend:${{ steps.meta.outputs.tag }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/capstone-staging/frontend:latest \
+            apps/frontend/
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/frontend:${{ steps.meta.outputs.tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/capstone-staging/frontend:latest
+
+      # ── Mise à jour des manifests k8s ─────────────────────────
+
+      - name: Mettre à jour les tags dans les manifests k8s
+        if: steps.changes.outputs.any_app == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ steps.meta.outputs.tag }}
+        run: |
+          # Remplace le tag de chaque app modifiée dans son manifest de déploiement
+          # (adapte le chemin si ta structure k8s est différente)
+
+          if [ "${{ steps.changes.outputs.api_users }}" == "true" ]; then
+            sed -i "s|${ECR_REGISTRY}/capstone-staging/api-users:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-users:${IMAGE_TAG}|g" \
+              k8s/base/api-users/deployment.yaml
+          fi
+
+          if [ "${{ steps.changes.outputs.api_orders }}" == "true" ]; then
+            sed -i "s|${ECR_REGISTRY}/capstone-staging/api-orders:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-orders:${IMAGE_TAG}|g" \
+              k8s/base/api-orders/deployment.yaml
+          fi
+
+          if [ "${{ steps.changes.outputs.api_products }}" == "true" ]; then
+            sed -i "s|${ECR_REGISTRY}/capstone-staging/api-products:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-products:${IMAGE_TAG}|g" \
+              k8s/base/api-products/deployment.yaml
+          fi
+
+          if [ "${{ steps.changes.outputs.frontend }}" == "true" ]; then
+            sed -i "s|${ECR_REGISTRY}/capstone-staging/frontend:[^ \"]*|${ECR_REGISTRY}/capstone-staging/frontend:${IMAGE_TAG}|g" \
+              k8s/base/frontend/deployment.yaml
+          fi
+
+      - name: Committer les manifests mis à jour
+        if: steps.changes.outputs.any_app == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add k8s/base/
+
+          # Ne committe que si quelque chose a vraiment changé
+          if git diff --cached --quiet; then
+            echo "Aucun manifest modifié — rien à committer"
+          else
+            git commit -m "ci: update image tags to ${GITHUB_SHA::7} [skip ci]"
+            git push origin main
+          fi
+
+
+# ─────────────────────────────────────────────────────────────────
+# JOB 2 — Deploy Infra (déclenché si terraform/ ou ansible/ a changé)
+# ─────────────────────────────────────────────────────────────────
+  deploy-infra:
+    name: Déploiement infrastructure (Terraform + Ansible)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Détecter les changements infra
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "terraform=$(echo "$CHANGED" | grep -q '^terraform/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "ansible=$(echo "$CHANGED"   | grep -q '^ansible/'   && echo true || echo false)" >> $GITHUB_OUTPUT
+
+          if echo "$CHANGED" | grep -qE '^(terraform|ansible)/'; then
+            echo "any_infra=true" >> $GITHUB_OUTPUT
+          else
+            echo "any_infra=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configurer les credentials AWS
+        if: steps.changes.outputs.any_infra == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── Terraform ─────────────────────────────────────────────
+
+      - name: Setup Terraform
+        if: steps.changes.outputs.terraform == 'true'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Reconstruire terraform.tfvars
+        if: steps.changes.outputs.terraform == 'true'
+        working-directory: terraform/environments/staging
+        run: |
+          # terraform.tfvars n'est pas commité — on le recrée depuis les secrets GitHub
+          # Secrets à créer :
+          #   K3S_SSH_PUBLIC_KEY = contenu de ~/.ssh/capstone_k3s.pub
+          #   (la clé privée K3S_SSH_KEY est déjà déclarée pour Ansible/SSH)
+          #
+          # allowed_ssh_cidr : en CI c'est le runner GitHub qui fait tourner Terraform,
+          # pas ta machine locale — on récupère son IP publique dynamiquement.
+          cat > terraform.tfvars << EOF
+          region           = "eu-west-1"
+          name             = "capstone-staging"
+          azs              = ["eu-west-1a", "eu-west-1b"]
+          ssh_public_key   = "${{ secrets.K3S_SSH_PUBLIC_KEY }}"
+          allowed_ssh_cidr = "0.0.0.0/0"
+          EOF
+          # 0.0.0.0/0 sur le port 22 est acceptable en staging :
+          # - authentification par clé ED25519 uniquement (pas de mot de passe)
+          # - les runners GitHub Actions ont des IP qui changent à chaque job,
+          #   impossible de les fixer sans complexifier le pipeline
+          # En prod : restreindre à un bastion ou aux plages IP GitHub
+          # (https://api.github.com/meta → champ "actions")
+
+      - name: Terraform Init
+        if: steps.changes.outputs.terraform == 'true'
+        working-directory: terraform/environments/staging
+        run: terraform init
+
+      - name: Terraform Plan
+        if: steps.changes.outputs.terraform == 'true'
+        working-directory: terraform/environments/staging
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: steps.changes.outputs.terraform == 'true'
+        working-directory: terraform/environments/staging
+        run: terraform apply -auto-approve tfplan
+
+      # ── Ansible ───────────────────────────────────────────────
+
+      - name: Setup Python + Ansible
+        if: steps.changes.outputs.ansible == 'true'
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws kubernetes.core community.general
+
+      - name: Configurer la clé SSH
+        if: steps.changes.outputs.ansible == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          # K3S_SSH_KEY = contenu brut de la clé privée (pas en base64)
+          # Même clé que celle dans ~/.ssh/capstone_k3s en local
+          echo "${{ secrets.K3S_SSH_KEY }}" > ~/.ssh/capstone_k3s
+          chmod 600 ~/.ssh/capstone_k3s
+
+      - name: Lancer le playbook Ansible
+        if: steps.changes.outputs.ansible == 'true'
+        working-directory: ansible/
+        run: |
+          # Même commande qu'en local — ansible.cfg pointe déjà sur
+          # inventory/aws_ec2.yml et la clé SSH capstone_k3s
+          ansible-playbook playbook-k3s.yml
+
+
+# ─────────────────────────────────────────────────────────────────
+# JOB 3 — Deploy k3s (manuel uniquement)
+# ─────────────────────────────────────────────────────────────────
+  deploy-k3s:
+    name: Déploiement sur k3s (EC2)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'deploy-k3s'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurer les credentials AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Configurer la clé SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.K3S_SSH_KEY }}" > ~/.ssh/capstone_k3s
+          chmod 600 ~/.ssh/capstone_k3s
+
+      - name: Récupérer les secrets RDS
+        id: rds
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id capstone-staging-rds-credentials-v2 \
+            --region ${{ env.AWS_REGION }} \
+            --query SecretString --output text)
+
+          echo "db_host=$(aws rds describe-db-instances \
+            --query 'DBInstances[?DBInstanceIdentifier==`capstone-staging-postgres`].Endpoint.Address' \
+            --output text)" >> $GITHUB_OUTPUT
+          echo "db_name=$(echo $SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["dbname"])')"    >> $GITHUB_OUTPUT
+          echo "db_user=$(echo $SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["username"])')"  >> $GITHUB_OUTPUT
+          echo "db_password=$(echo $SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["password"])')"  >> $GITHUB_OUTPUT
+
+      - name: Copier les manifests k8s sur la VM
+        run: |
+          # kubectl tourne directement sur la VM (k3s l'installe avec son kubeconfig)
+          # On envoie juste les manifests depuis le runner
+          scp -i ~/.ssh/capstone_k3s \
+            -o StrictHostKeyChecking=no \
+            -r k8s/ ubuntu@${{ secrets.K3S_HOST }}:~/k8s/
+
+      - name: Déployer sur k3s via SSH
+        run: |
+          ECR_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+          ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+          ssh -i ~/.ssh/capstone_k3s \
+            -o StrictHostKeyChecking=no \
+            ubuntu@${{ secrets.K3S_HOST }} \
+            DB_HOST='${{ steps.rds.outputs.db_host }}' \
+            DB_NAME='${{ steps.rds.outputs.db_name }}' \
+            DB_USER='${{ steps.rds.outputs.db_user }}' \
+            DB_PASSWORD='${{ steps.rds.outputs.db_password }}' \
+            ECR_REGISTRY="${ECR_REGISTRY}" \
+            ECR_TOKEN="${ECR_TOKEN}" \
+            bash << 'SSHEOF'
+
+            # ── Renouveler le token ECR (expire toutes les 12h) ──────
+            sudo mkdir -p /etc/rancher/k3s
+            sudo tee /etc/rancher/k3s/registries.yaml > /dev/null << REGEOF
+mirrors:
+  ${ECR_REGISTRY}:
+    endpoint:
+      - "https://${ECR_REGISTRY}"
+configs:
+  "${ECR_REGISTRY}":
+    auth:
+      username: AWS
+      password: ${ECR_TOKEN}
+REGEOF
+            sudo systemctl restart k3s
+            sleep 5
+
+            # ── Secrets Kubernetes ────────────────────────────────────
+            kubectl create namespace capstone --dry-run=client -o yaml | kubectl apply -f -
+
+            kubectl create secret generic db-credentials \
+              --namespace capstone \
+              --from-literal=DB_HOST="${DB_HOST}" \
+              --from-literal=DB_PORT=5432 \
+              --from-literal=DB_NAME="${DB_NAME}" \
+              --from-literal=DB_USER="${DB_USER}" \
+              --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            # ── Appliquer les manifests ───────────────────────────────
+            kubectl apply -k ~/k8s/overlays/k3s/
+
+            # ── Attendre que tout soit prêt ───────────────────────────
+            kubectl rollout status deployment/api-users    -n capstone --timeout=120s
+            kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
+            kubectl rollout status deployment/api-products -n capstone --timeout=120s
+            kubectl rollout status deployment/frontend     -n capstone --timeout=120s
+SSHEOF
+
+      - name: Smoke test
+        run: |
+          sleep 10
+          curl -f http://${{ secrets.K3S_HOST }}/health || exit 1
+          echo "k3s smoke test OK"
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# JOB 4 — Deploy EKS (manuel uniquement)
+# ─────────────────────────────────────────────────────────────────
+  deploy-eks:
+    name: Déploiement sur EKS
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'deploy-eks'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurer les credentials AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Installer kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configurer kubectl pour EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name capstone-staging-eks
+
+      - name: Récupérer les secrets RDS
+        id: rds
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id capstone-staging-rds-credentials-v2 \
+            --region ${{ env.AWS_REGION }} \
+            --query SecretString --output text)
+
+          echo "db_host=$(aws rds describe-db-instances \
+            --query 'DBInstances[?DBInstanceIdentifier==`capstone-staging-postgres`].Endpoint.Address' \
+            --output text)" >> $GITHUB_OUTPUT
+          echo "db_name=$(echo $SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["dbname"])')"    >> $GITHUB_OUTPUT
+          echo "db_user=$(echo $SECRET     | python3 -c 'import sys,json; print(json.load(sys.stdin)["username"])')"  >> $GITHUB_OUTPUT
+          echo "db_password=$(echo $SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)["password"])')"  >> $GITHUB_OUTPUT
+
+      - name: Créer/mettre à jour les Secrets Kubernetes
+        run: |
+          kubectl create namespace capstone --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic db-credentials \
+            --namespace capstone \
+            --from-literal=DB_HOST=${{ steps.rds.outputs.db_host }} \
+            --from-literal=DB_PORT=5432 \
+            --from-literal=DB_NAME=${{ steps.rds.outputs.db_name }} \
+            --from-literal=DB_USER=${{ steps.rds.outputs.db_user }} \
+            --from-literal=DB_PASSWORD=${{ steps.rds.outputs.db_password }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic elk-credentials \
+            --namespace capstone \
+            --from-literal=ELASTIC_PASSWORD=${{ secrets.ELASTIC_PASSWORD }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Installer cert-manager (dépendance du Load Balancer Controller)
+        run: |
+          # Idempotent — si déjà installé, kubectl apply met juste à jour
+          kubectl apply --validate=false -f \
+            https://github.com/jetstack/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/instance=cert-manager \
+            -n cert-manager --timeout=120s
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Installer le AWS Load Balancer Controller
+        run: |
+          # Init pour connecter le runner au backend S3 (state distant)
+          terraform -chdir=terraform/environments/staging init -reconfigure
+
+          VPC_ID=$(terraform -chdir=terraform/environments/staging output -raw vpc_id)
+
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
+          # upgrade --install = idempotent : installe si absent, met à jour si présent
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=capstone-staging-eks \
+            --set serviceAccount.create=true \
+            --set region=${{ env.AWS_REGION }} \
+            --set vpcId=${VPC_ID}
+
+          kubectl rollout status deployment/aws-load-balancer-controller \
+            -n kube-system --timeout=120s
+
+      - name: Appliquer les manifests EKS (app + monitoring)
+        run: kubectl apply -k k8s/overlays/eks/
+
+      - name: Attendre que les déploiements soient prêts
+        run: |
+          kubectl rollout status deployment/api-users    -n capstone --timeout=180s
+          kubectl rollout status deployment/api-orders   -n capstone --timeout=180s
+          kubectl rollout status deployment/api-products -n capstone --timeout=180s
+          kubectl rollout status deployment/frontend     -n capstone --timeout=180s
+
+      - name: Récupérer l'URL de l'ALB
+        id: alb
+        run: |
+          for i in $(seq 1 12); do
+            ALB_URL=$(kubectl get ingress capstone-ingress -n capstone \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ -n "$ALB_URL" ]; then
+              echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
+              break
+            fi
+            echo "Tentative $i/12 — ALB pas encore prêt..."
+            sleep 15
+          done
+
+      - name: Smoke test
+        run: |
+          curl -f http://${{ steps.alb.outputs.alb_url }}/health || exit 1
+          echo "EKS smoke test OK — ALB: ${{ steps.alb.outputs.alb_url }}"

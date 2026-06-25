@@ -53,6 +53,8 @@ spec:
                 secretKeyRef:
                   name: elk-credentials
                   key: ELASTIC_PASSWORD
+            - name: LS_JAVA_OPTS          # ← ajouter ceci
+              value: "-Xms256m -Xmx256m"  # ← heap JVM à 256m, bien sous les 768Mi
           resources:
             requests:
               cpu: "200m"

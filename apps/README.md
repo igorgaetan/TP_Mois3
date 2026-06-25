@@ -108,36 +108,36 @@ commit Git.
 ```bash
 cd apps/api-users
 
-docker build -t $ECR_REGISTRY/capstone-staging/api-users:latest .
+docker build -t $ECR_REGISTRY/capstone-staging/api-users:1.1.1 .
 
-docker push $ECR_REGISTRY/capstone-staging/api-users:latest
+docker push $ECR_REGISTRY/capstone-staging/api-users:1.1.1
 ```
 
 ### api-orders
 ```bash
 cd ../api-orders
 
-docker build -t $ECR_REGISTRY/capstone-staging/api-orders:latest .
+docker build -t $ECR_REGISTRY/capstone-staging/api-orders:1.1.1 .
 
-docker push $ECR_REGISTRY/capstone-staging/api-orders:latest
+docker push $ECR_REGISTRY/capstone-staging/api-orders:1.1.1
 ```
 
 ### api-products
 ```bash
 cd ../api-products
 
-docker build -t $ECR_REGISTRY/capstone-staging/api-products:latest .
+docker build -t $ECR_REGISTRY/capstone-staging/api-products:1.1.1 .
 
-docker push $ECR_REGISTRY/capstone-staging/api-products:latest
+docker push $ECR_REGISTRY/capstone-staging/api-products:1.1.1
 ```
 
 ### frontend
 ```bash
 cd ../frontend
 
-docker build -t $ECR_REGISTRY/capstone-staging/frontend:latest .
+docker build -t $ECR_REGISTRY/capstone-staging/frontend:1.1.1 .
 
-docker push $ECR_REGISTRY/capstone-staging/frontend:latest
+docker push $ECR_REGISTRY/capstone-staging/frontend:1.1.1
 ```
 
 ---
