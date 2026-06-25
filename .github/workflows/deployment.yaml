@@ -305,54 +305,70 @@ jobs:
             -o StrictHostKeyChecking=no \
             -r k8s/ ubuntu@${{ secrets.K3S_HOST }}:~/k8s/
 
-      - name: Déployer sur k3s via SSH
+      - name: Générer le script de déploiement k3s
+        env:
+          DB_HOST:      ${{ steps.rds.outputs.db_host }}
+          DB_NAME:      ${{ steps.rds.outputs.db_name }}
+          DB_USER:      ${{ steps.rds.outputs.db_user }}
+          DB_PASSWORD:  ${{ steps.rds.outputs.db_password }}
         run: |
           ECR_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
           ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
+          # On écrit le script dans un fichier — évite tout heredoc SSH (<<)
+          # qui provoquerait une erreur de parsing YAML dans GitHub Actions
+          cat > /tmp/deploy-k3s.sh << SCRIPT
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # ── Renouveler le token ECR (expire toutes les 12h) ──────
+          sudo mkdir -p /etc/rancher/k3s
+          printf 'mirrors:\n  %s:\n    endpoint:\n      - "https://%s"\nconfigs:\n  "%s":\n    auth:\n      username: AWS\n      password: %s\n' \
+            "${ECR_REGISTRY}" "${ECR_REGISTRY}" "${ECR_REGISTRY}" "${ECR_TOKEN}" \
+            | sudo tee /etc/rancher/k3s/registries.yaml > /dev/null
+
+          sudo systemctl restart k3s
+          sleep 5
+
+          # ── Secrets Kubernetes ────────────────────────────────────
+          kubectl create namespace capstone --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic db-credentials \
+            --namespace capstone \
+            --from-literal=DB_HOST="${DB_HOST}" \
+            --from-literal=DB_PORT=5432 \
+            --from-literal=DB_NAME="${DB_NAME}" \
+            --from-literal=DB_USER="${DB_USER}" \
+            --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # ── Appliquer les manifests ───────────────────────────────
+          kubectl apply -k ~/k8s/overlays/k3s/
+
+          # ── Attendre que tout soit prêt ───────────────────────────
+          kubectl rollout status deployment/api-users    -n capstone --timeout=120s
+          kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
+          kubectl rollout status deployment/api-products -n capstone --timeout=120s
+          kubectl rollout status deployment/frontend     -n capstone --timeout=120s
+          SCRIPT
+
+          chmod +x /tmp/deploy-k3s.sh
+
+          # Sauvegarde des variables pour le step suivant
+          echo "ECR_TOKEN=${ECR_TOKEN}"       >> $GITHUB_ENV
+          echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
+
+      - name: Déployer sur k3s via SSH
+        run: |
+          # Copie du script sur la VM puis exécution — aucun heredoc SSH
+          scp -i ~/.ssh/capstone_k3s \
+            -o StrictHostKeyChecking=no \
+            /tmp/deploy-k3s.sh ubuntu@${{ secrets.K3S_HOST }}:/tmp/deploy-k3s.sh
+
           ssh -i ~/.ssh/capstone_k3s \
             -o StrictHostKeyChecking=no \
             ubuntu@${{ secrets.K3S_HOST }} \
-            DB_HOST='${{ steps.rds.outputs.db_host }}' \
-            DB_NAME='${{ steps.rds.outputs.db_name }}' \
-            DB_USER='${{ steps.rds.outputs.db_user }}' \
-            DB_PASSWORD='${{ steps.rds.outputs.db_password }}' \
-            ECR_REGISTRY="${ECR_REGISTRY}" \
-            ECR_TOKEN="${ECR_TOKEN}" \
-            bash << 'SSHEOF'
-
-            # ── Renouveler le token ECR (expire toutes les 12h) ──────
-            # NOTE : on évite un heredoc imbriqué (conflits YAML avec <<)
-            # printf génère le même contenu que l'ancien heredoc REGEOF
-            sudo mkdir -p /etc/rancher/k3s
-            printf 'mirrors:\n  %s:\n    endpoint:\n      - "https://%s"\nconfigs:\n  "%s":\n    auth:\n      username: AWS\n      password: %s\n' \
-              "${ECR_REGISTRY}" "${ECR_REGISTRY}" "${ECR_REGISTRY}" "${ECR_TOKEN}" \
-              | sudo tee /etc/rancher/k3s/registries.yaml > /dev/null
-
-            sudo systemctl restart k3s
-            sleep 5
-
-            # ── Secrets Kubernetes ────────────────────────────────────
-            kubectl create namespace capstone --dry-run=client -o yaml | kubectl apply -f -
-
-            kubectl create secret generic db-credentials \
-              --namespace capstone \
-              --from-literal=DB_HOST="${DB_HOST}" \
-              --from-literal=DB_PORT=5432 \
-              --from-literal=DB_NAME="${DB_NAME}" \
-              --from-literal=DB_USER="${DB_USER}" \
-              --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
-              --dry-run=client -o yaml | kubectl apply -f -
-
-            # ── Appliquer les manifests ───────────────────────────────
-            kubectl apply -k ~/k8s/overlays/k3s/
-
-            # ── Attendre que tout soit prêt ───────────────────────────
-            kubectl rollout status deployment/api-users    -n capstone --timeout=120s
-            kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
-            kubectl rollout status deployment/api-products -n capstone --timeout=120s
-            kubectl rollout status deployment/frontend     -n capstone --timeout=120s
-SSHEOF
+            "bash /tmp/deploy-k3s.sh && rm /tmp/deploy-k3s.sh"
 
       - name: Smoke test
         run: |
