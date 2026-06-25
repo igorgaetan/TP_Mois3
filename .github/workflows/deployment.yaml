@@ -123,22 +123,22 @@ jobs:
         run: |
           if [ "${{ steps.changes.outputs.api_users }}" == "true" ]; then
             sed -i "s|${ECR_REGISTRY}/capstone-staging/api-users:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-users:${IMAGE_TAG}|g" \
-              k8s/base/api-users/deployment.yaml
+              k8s/base/api-users.yaml
           fi
 
           if [ "${{ steps.changes.outputs.api_orders }}" == "true" ]; then
             sed -i "s|${ECR_REGISTRY}/capstone-staging/api-orders:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-orders:${IMAGE_TAG}|g" \
-              k8s/base/api-orders/deployment.yaml
+              k8s/base/api-orders.yaml
           fi
 
           if [ "${{ steps.changes.outputs.api_products }}" == "true" ]; then
             sed -i "s|${ECR_REGISTRY}/capstone-staging/api-products:[^ \"]*|${ECR_REGISTRY}/capstone-staging/api-products:${IMAGE_TAG}|g" \
-              k8s/base/api-products/deployment.yaml
+              k8s/base/api-products.yaml
           fi
 
           if [ "${{ steps.changes.outputs.frontend }}" == "true" ]; then
             sed -i "s|${ECR_REGISTRY}/capstone-staging/frontend:[^ \"]*|${ECR_REGISTRY}/capstone-staging/frontend:${IMAGE_TAG}|g" \
-              k8s/base/frontend/deployment.yaml
+              k8s/base/frontend.yaml
           fi
 
       - name: Committer les manifests mis à jour

@@ -10,8 +10,6 @@ COPY src ./src
 ENV PORT=3003
 EXPOSE 3003
 
-
-
 # ✅ user non-root avec UID numérique
 RUN addgroup -g 1001 app && adduser -D -u 1001 -G app app
 USER 1001
