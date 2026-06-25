@@ -308,9 +308,15 @@ jobs:
 
       - name: Copier les manifests k8s sur la VM
         run: |
-          scp -i ~/.ssh/capstone_k3s \
+          # Supprime l'ancien dossier avant de copier pour éviter les fichiers résiduels
+          ssh -i ~/.ssh/capstone_k3s \
             -o StrictHostKeyChecking=no \
-            -r k8s/ ubuntu@${{ secrets.K3S_HOST }}:~/k8s/
+            ubuntu@${{ secrets.K3S_HOST }} "rm -rf ~/k8s"
+
+          scp -i ~/.ssh/capstone_k3s \
+            -O \
+            -o StrictHostKeyChecking=no \
+            -r k8s ubuntu@${{ secrets.K3S_HOST }}:~/k8s
 
       - name: Générer le script de déploiement k3s
         env:
@@ -322,8 +328,6 @@ jobs:
           ECR_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
           ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
-          # On écrit le script dans un fichier — évite tout heredoc SSH (<<)
-          # qui provoquerait une erreur de parsing YAML dans GitHub Actions
           cat > /tmp/deploy-k3s.sh << SCRIPT
           #!/usr/bin/env bash
           set -euo pipefail
@@ -338,7 +342,6 @@ jobs:
           sleep 5
 
           # ── Secrets Kubernetes ────────────────────────────────────
-          # sudo nécessaire : k3s crée /etc/rancher/k3s/k3s.yaml en root:root 600
           sudo kubectl create namespace capstone --dry-run=client -o yaml | sudo kubectl apply -f -
 
           sudo kubectl create secret generic db-credentials \
@@ -353,27 +356,18 @@ jobs:
           # ── Appliquer les manifests ───────────────────────────────
           sudo kubectl apply -k ~/k8s/overlays/k3s/
 
+          # Force le redémarrage des pods pour prendre en compte les changements
+          sudo kubectl rollout restart deployment/api-users deployment/api-orders deployment/api-products deployment/frontend -n capstone
+
           # ── Attendre que tout soit prêt ───────────────────────────
-          # if: échec → le bloc diagnostic s'exécute avant de quitter
-          for deploy in api-users api-orders api-products frontend; do
-            if ! sudo kubectl rollout status deployment/${deploy} -n capstone --timeout=180s; then
-              echo "──────────────────────────────────────────"
-              echo "DIAGNOSTIC — ${deploy} n'est pas prêt"
-              echo "──────────────────────────────────────────"
-              echo "### Pods ###"
-              sudo kubectl get pods -n capstone -l app=${deploy} -o wide
-              echo "### Describe pods ###"
-              sudo kubectl describe pods -n capstone -l app=${deploy}
-              echo "### Logs (50 dernières lignes) ###"
-              sudo kubectl logs -n capstone -l app=${deploy} --tail=50 || true
-              exit 1
-            fi
-          done
+          sudo kubectl rollout status deployment/api-users    -n capstone --timeout=180s
+          sudo kubectl rollout status deployment/api-orders   -n capstone --timeout=180s
+          sudo kubectl rollout status deployment/api-products -n capstone --timeout=180s
+          sudo kubectl rollout status deployment/frontend     -n capstone --timeout=180s
           SCRIPT
 
           chmod +x /tmp/deploy-k3s.sh
 
-          # Sauvegarde des variables pour le step suivant
           echo "ECR_TOKEN=${ECR_TOKEN}"       >> $GITHUB_ENV
           echo "ECR_REGISTRY=${ECR_REGISTRY}" >> $GITHUB_ENV
 
@@ -458,6 +452,7 @@ jobs:
             --namespace capstone \
             --from-literal=ELASTIC_PASSWORD=${{ secrets.ELASTIC_PASSWORD }} \
             --dry-run=client -o yaml | kubectl apply -f -
+          
 
       - name: Installer cert-manager (dépendance du Load Balancer Controller)
         run: |
@@ -500,6 +495,24 @@ jobs:
 
       - name: Appliquer les manifests EKS (app + monitoring)
         run: kubectl apply -k k8s/overlays/eks/
+      
+      - name: Configurer le mot de passe kibana_system
+        run: |
+          kubectl wait pod/elasticsearch-0 \
+            --for=condition=ready \
+            --namespace capstone \
+            --timeout=120s
+
+          RESPONSE=$(kubectl exec -n capstone elasticsearch-0 -- \
+            curl -s -u elastic:${{ secrets.ELASTIC_PASSWORD }} \
+            -X POST "localhost:9200/_security/user/kibana_system/_password" \
+            -H "Content-Type: application/json" \
+            -d "{\"password\":\"${{ secrets.ELASTIC_PASSWORD }}\"}")
+
+          echo "Réponse Elasticsearch : ${RESPONSE}"
+
+          # Échoue si la réponse contient "error"
+          echo "${RESPONSE}" | grep -qi "error" && exit 1 || echo "kibana_system configuré"
 
       - name: Attendre que les déploiements soient prêts
         run: |
