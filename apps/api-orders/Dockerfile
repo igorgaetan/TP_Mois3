@@ -16,5 +16,4 @@ USER 1001
 
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3002/health || exit 1
 
-
 CMD ["node", "src/index.js"]

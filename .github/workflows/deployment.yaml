@@ -25,12 +25,15 @@ jobs:
     name: Build & Push images vers ECR
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    permissions:
+      contents: write   # nécessaire pour git push vers le repo
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2   # nécessaire pour git diff
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Détecter les apps modifiées
         id: changes
@@ -146,6 +149,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Injecter le token dans l'URL pour autoriser le push
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
 
           git add k8s/base/
 
