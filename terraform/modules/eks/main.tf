@@ -250,22 +250,3 @@ resource "aws_iam_role_policy_attachment" "aws_lb_controller_policy" {
   policy_arn = aws_iam_policy.aws_lb_controller.arn
 }
 
-# 4. Injection automatique de l'annotation dans le ServiceAccount Kubernetes
-resource "kubernetes_annotations" "aws_lb_controller_sa" {
-  api_version = "v1"
-  kind        = "ServiceAccount"
-  
-  metadata {
-    name      = "aws-load-balancer-controller"
-    namespace = "kube-system"
-  }
-
-  annotations = {
-    "eks.amazonaws.com/role-arn" = aws_iam_role.aws_lb_controller.arn
-  }
-
-  depends_on = [
-    aws_eks_cluster.this,
-    aws_iam_role_policy_attachment.aws_lb_controller_policy
-  ]
-}

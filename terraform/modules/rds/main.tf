@@ -6,7 +6,7 @@ resource "random_password" "db" {
 
 # --- Stocké dans Secrets Manager, jamais en clair dans le state lisible ---
 resource "aws_secretsmanager_secret" "db" {
-  name = "${var.name}-rds-credentials-v3"
+  name = "${var.name}-rds-credentials-v4"
 }
 
 resource "aws_secretsmanager_secret_version" "db" {

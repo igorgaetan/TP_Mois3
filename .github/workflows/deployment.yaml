@@ -294,7 +294,7 @@ jobs:
         id: rds
         run: |
           SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id capstone-staging-rds-credentials-v2 \
+            --secret-id capstone-staging-rds-credentials-v4 \
             --region ${{ env.AWS_REGION }} \
             --query SecretString --output text)
 
@@ -417,7 +417,7 @@ jobs:
         id: rds
         run: |
           SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id capstone-staging-rds-credentials-v2 \
+            --secret-id capstone-staging-rds-credentials-v4 \
             --region ${{ env.AWS_REGION }} \
             --query SecretString --output text)
 
@@ -460,9 +460,16 @@ jobs:
 
       - name: Installer le AWS Load Balancer Controller
         run: |
+          # Récupération des outputs Terraform (state distant déjà initialisé)
           terraform -chdir=terraform/environments/staging init -reconfigure
 
           VPC_ID=$(terraform -chdir=terraform/environments/staging output -raw vpc_id)
+
+          # L'ARN du rôle IAM est créé par Terraform — on le passe à Helm
+          # pour qu'il l'injecte en annotation sur le ServiceAccount qu'il crée.
+          # Cela évite d'avoir kubernetes_annotations dans Terraform, qui échoue
+          # car le SA n'existe pas encore au moment du terraform apply.
+          LBC_ROLE_ARN=$(terraform -chdir=terraform/environments/staging output -raw aws_lb_controller_role_arn)
 
           helm repo add eks https://aws.github.io/eks-charts
           helm repo update
@@ -471,6 +478,7 @@ jobs:
             -n kube-system \
             --set clusterName=capstone-staging-eks \
             --set serviceAccount.create=true \
+            --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${LBC_ROLE_ARN}" \
             --set region=${{ env.AWS_REGION }} \
             --set vpcId=${VPC_ID}
 

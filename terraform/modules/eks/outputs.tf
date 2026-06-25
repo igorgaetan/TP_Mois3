@@ -13,3 +13,8 @@ output "cluster_certificate_authority" {
 output "node_security_group_id" {
   value = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
 }
+
+output "aws_lb_controller_role_arn" {
+  description = "ARN du rôle IAM pour le AWS Load Balancer Controller"
+  value       = aws_iam_role.aws_lb_controller.arn
+}

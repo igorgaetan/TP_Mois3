@@ -42,3 +42,8 @@ output "ecr_registry_url" {
 output "ecr_repository_urls" {
   value = module.ecr.repository_urls
 }
+
+output "aws_lb_controller_role_arn" {
+  description = "ARN du rôle IAM pour le AWS Load Balancer Controller"
+  value       = module.eks.aws_lb_controller_role_arn
+}
