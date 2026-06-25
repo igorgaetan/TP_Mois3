@@ -309,9 +309,8 @@ jobs:
       - name: Copier les manifests k8s sur la VM
         run: |
           scp -i ~/.ssh/capstone_k3s \
-            -O \
             -o StrictHostKeyChecking=no \
-            -r k8s ubuntu@${{ secrets.K3S_HOST }}:~/k8s
+            -r k8s/ ubuntu@${{ secrets.K3S_HOST }}:~/k8s/
 
       - name: Générer le script de déploiement k3s
         env:
@@ -355,10 +354,21 @@ jobs:
           sudo kubectl apply -k ~/k8s/overlays/k3s/
 
           # ── Attendre que tout soit prêt ───────────────────────────
-          sudo kubectl rollout status deployment/api-users    -n capstone --timeout=120s
-          sudo kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
-          sudo kubectl rollout status deployment/api-products -n capstone --timeout=120s
-          sudo kubectl rollout status deployment/frontend     -n capstone --timeout=120s
+          # if: échec → le bloc diagnostic s'exécute avant de quitter
+          for deploy in api-users api-orders api-products frontend; do
+            if ! sudo kubectl rollout status deployment/${deploy} -n capstone --timeout=180s; then
+              echo "──────────────────────────────────────────"
+              echo "DIAGNOSTIC — ${deploy} n'est pas prêt"
+              echo "──────────────────────────────────────────"
+              echo "### Pods ###"
+              sudo kubectl get pods -n capstone -l app=${deploy} -o wide
+              echo "### Describe pods ###"
+              sudo kubectl describe pods -n capstone -l app=${deploy}
+              echo "### Logs (50 dernières lignes) ###"
+              sudo kubectl logs -n capstone -l app=${deploy} --tail=50 || true
+              exit 1
+            fi
+          done
           SCRIPT
 
           chmod +x /tmp/deploy-k3s.sh
@@ -493,10 +503,20 @@ jobs:
 
       - name: Attendre que les déploiements soient prêts
         run: |
-          kubectl rollout status deployment/api-users    -n capstone --timeout=180s
-          kubectl rollout status deployment/api-orders   -n capstone --timeout=180s
-          kubectl rollout status deployment/api-products -n capstone --timeout=180s
-          kubectl rollout status deployment/frontend     -n capstone --timeout=180s
+          for deploy in api-users api-orders api-products frontend; do
+            if ! kubectl rollout status deployment/${deploy} -n capstone --timeout=180s; then
+              echo "──────────────────────────────────────────"
+              echo "DIAGNOSTIC — ${deploy} n'est pas prêt"
+              echo "──────────────────────────────────────────"
+              echo "### Pods ###"
+              kubectl get pods -n capstone -l app=${deploy} -o wide
+              echo "### Describe pods ###"
+              kubectl describe pods -n capstone -l app=${deploy}
+              echo "### Logs (50 dernières lignes) ###"
+              kubectl logs -n capstone -l app=${deploy} --tail=50 || true
+              exit 1
+            fi
+          done
 
       - name: Récupérer l'URL de l'ALB
         id: alb
