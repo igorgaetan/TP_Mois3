@@ -339,25 +339,26 @@ jobs:
           sleep 5
 
           # ── Secrets Kubernetes ────────────────────────────────────
-          kubectl create namespace capstone --dry-run=client -o yaml | kubectl apply -f -
+          # sudo nécessaire : k3s crée /etc/rancher/k3s/k3s.yaml en root:root 600
+          sudo kubectl create namespace capstone --dry-run=client -o yaml | sudo kubectl apply -f -
 
-          kubectl create secret generic db-credentials \
+          sudo kubectl create secret generic db-credentials \
             --namespace capstone \
             --from-literal=DB_HOST="${DB_HOST}" \
             --from-literal=DB_PORT=5432 \
             --from-literal=DB_NAME="${DB_NAME}" \
             --from-literal=DB_USER="${DB_USER}" \
             --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
-            --dry-run=client -o yaml | kubectl apply -f -
+            --dry-run=client -o yaml | sudo kubectl apply -f -
 
           # ── Appliquer les manifests ───────────────────────────────
-          kubectl apply -k ~/k8s/overlays/k3s/
+          sudo kubectl apply -k ~/k8s/overlays/k3s/
 
           # ── Attendre que tout soit prêt ───────────────────────────
-          kubectl rollout status deployment/api-users    -n capstone --timeout=120s
-          kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
-          kubectl rollout status deployment/api-products -n capstone --timeout=120s
-          kubectl rollout status deployment/frontend     -n capstone --timeout=120s
+          sudo kubectl rollout status deployment/api-users    -n capstone --timeout=120s
+          sudo kubectl rollout status deployment/api-orders   -n capstone --timeout=120s
+          sudo kubectl rollout status deployment/api-products -n capstone --timeout=120s
+          sudo kubectl rollout status deployment/frontend     -n capstone --timeout=120s
           SCRIPT
 
           chmod +x /tmp/deploy-k3s.sh
