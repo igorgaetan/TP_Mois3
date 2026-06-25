@@ -309,8 +309,9 @@ jobs:
       - name: Copier les manifests k8s sur la VM
         run: |
           scp -i ~/.ssh/capstone_k3s \
+            -O \
             -o StrictHostKeyChecking=no \
-            -r k8s/ ubuntu@${{ secrets.K3S_HOST }}:~/k8s/
+            -r k8s ubuntu@${{ secrets.K3S_HOST }}:~/k8s
 
       - name: Générer le script de déploiement k3s
         env:
