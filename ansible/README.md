@@ -186,6 +186,8 @@ Ansible est idempotent : tu peux relancer `ansible-playbook playbook-k3s.yml`
 autant de fois que tu veux, il ne réinstalle pas ce qui existe déjà
 (`creates: /usr/local/bin/k3s` empêche la réinstallation de k3s par exemple).
 
+
+
 ## 14. Problèmes courants
 
 | Symptôme | Cause probable | Solution |

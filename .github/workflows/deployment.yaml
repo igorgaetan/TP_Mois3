@@ -12,6 +12,7 @@ on:
         options:
           - deploy-k3s
           - deploy-eks
+          - destroy-infra
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -513,3 +514,52 @@ jobs:
         run: |
           curl -f http://${{ steps.alb.outputs.alb_url }}/health || exit 1
           echo "EKS smoke test OK — ALB: ${{ steps.alb.outputs.alb_url }}"
+
+
+# ─────────────────────────────────────────────────────────────────
+# JOB 5 — Destroy Infra (manuel uniquement)
+# ─────────────────────────────────────────────────────────────────
+  destroy-infra:
+    name: Destruction de l'infrastructure (Terraform Destroy)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'destroy-infra'
+    environment: destroy   # protection manuelle — nécessite une approbation dans GitHub
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurer les credentials AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Reconstruire terraform.tfvars
+        working-directory: terraform/environments/staging
+        run: |
+          cat > terraform.tfvars << EOF
+          region           = "eu-west-1"
+          name             = "capstone-staging"
+          azs              = ["eu-west-1a", "eu-west-1b"]
+          ssh_public_key   = "${{ secrets.K3S_SSH_PUBLIC_KEY }}"
+          allowed_ssh_cidr = "0.0.0.0/0"
+          EOF
+
+      - name: Terraform Init
+        working-directory: terraform/environments/staging
+        run: terraform init
+
+      - name: Terraform Plan Destroy
+        working-directory: terraform/environments/staging
+        run: terraform plan -destroy -out=tfplan-destroy
+
+      - name: Terraform Destroy
+        working-directory: terraform/environments/staging
+        run: terraform apply -auto-approve tfplan-destroy
